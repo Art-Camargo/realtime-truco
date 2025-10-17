@@ -126,9 +126,7 @@ void run_server() {
     if (is_room_full(room)) {
       sem_post(&room->start_round);
     }
-
   }
-
 }
 
 int main() {
