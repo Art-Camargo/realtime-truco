@@ -74,7 +74,7 @@ void *room_thread(void* arg) {
     sem_wait(&room->start_round);
     // Game logic would go here
     // For simplicity, we just reset the room
-    cout << "Teste room " << room->id << " starting a new round with players: ";
+    cout << "Teste room " << room->id << " starting a new round with players: " << endl;
     break;
   }
   return nullptr;
@@ -87,11 +87,12 @@ void run_server() {
   for (int i = 0; i < MAX_ROOMS; i++) {
     pthread_t tid;
     
-    if (pthread_create(&tid, nullptr, room_thread, new Room(rooms[i])) != 0) {
+    create_room(&rooms[i], tid); 
+    
+    if (pthread_create(&tid, nullptr, room_thread, &rooms[i]) != 0) {
       perror("Failed to create room thread");
       exit(EXIT_FAILURE);
     }
-    create_room(&rooms[i], tid);
 
     pthread_detach(tid);
   }
