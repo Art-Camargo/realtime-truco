@@ -82,6 +82,7 @@ void create_room(Room* room, pthread_t tid) {
 
 vector<Card> deal_hand() {
   vector<Card> hand;
+  srand(time(nullptr));
   
   while (hand.size() < (TOTAL_PER_ROOM * 3)) {
     int index = rand() % DECK_SIZE;
@@ -101,14 +102,31 @@ vector<Card> deal_hand() {
   return hand;
 }
 
-void send_hand_to_player(int socket_fd, vector<Card>& hand, vector<int>& already_played) {
+void send_hand_to_player(int socket_fd, vector<Card>& hand, vector<int>& already_played, Player players[], int total_players, vector<Card>& table) {
   string clear_screen = "\033[2J\033[H";
   send(socket_fd, clear_screen.c_str(), clear_screen.length(), 0);
+
+  string scoreboard = "=== PLACAR ===\n";
+  for (int i = 0; i < total_players; i++) {
+    scoreboard += "Jogador " + to_string(i) + " - " + to_string(players[i].points) + " pontos\n";
+  }
+  scoreboard += "\n";
+  send(socket_fd, scoreboard.c_str(), scoreboard.length(), 0);
+  
+  string table_msg = "=== MESA ===\n";
+  if (table.size() > 0) {
+    for (int i = 0; i < table.size(); i++) {
+      table_msg += "Jogador " + to_string(i) + ": " + to_string(table[i].rank) + " de " + string(table[i].suit) + "\n";
+    }
+  } else {
+    table_msg += "(vazia)\n";
+  }
+  table_msg += "\n";
+  send(socket_fd, table_msg.c_str(), table_msg.length(), 0);
   
   string message = "HAND:\n";
   
   for (int i = 0; i < hand.size(); i++) {
-    // Verifica se a carta já foi jogada
     bool was_played = false;
     for (int played_idx : already_played) {
       if (played_idx == i) {
@@ -178,19 +196,22 @@ void *room_thread(void* arg) {
     
     cout << "Iniciando partida na sala " << room->id << endl;
     int client_to_play = 0;
+
+    Player players[TOTAL_PER_ROOM];
+    for (int i = 0; i < TOTAL_PER_ROOM; i++) {
+      players[i].socket_fd = room->players[i];
+      players[i].points = 0;
+    }
     
     while(true) {
       vector<Card> unique_cards = deal_hand();
       vector<Card> table;
-      Player players[TOTAL_PER_ROOM];
-      
+
       for (int i = 0; i < TOTAL_PER_ROOM; i++) {
-        players[i].socket_fd = room->players[i];
-        players[i].points = 0;
         players[i].hand = vector<Card>(unique_cards.begin() + i * 3, unique_cards.begin() + (i + 1) * 3);
         players[i].already_played.clear();
-
-        send_hand_to_player(players[i].socket_fd, players[i].hand, players[i].already_played);
+      
+        send_hand_to_player(players[i].socket_fd, players[i].hand, players[i].already_played, players, TOTAL_PER_ROOM, table);
       }
 
       int rounds_won[TOTAL_PER_ROOM] = {0, 0};
@@ -203,7 +224,7 @@ void *room_thread(void* arg) {
         for (int turn = 0; turn < TOTAL_PER_ROOM; turn++) {
           int current_player = client_to_play;
 
-          send_hand_to_player(players[current_player].socket_fd, players[current_player].hand, players[current_player].already_played);
+          send_hand_to_player(players[current_player].socket_fd, players[current_player].hand, players[current_player].already_played, players, TOTAL_PER_ROOM, table);
           send(players[current_player].socket_fd, "YOUR_TURN\n", 10, 0);
           
           char buffer[32];
