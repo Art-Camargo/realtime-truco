@@ -431,69 +431,81 @@ void *room_thread(void* arg) {
 
           if (input == "T" || input == "t") {
             int opponent = (current_player == 0) ? 1 : 0;
-            int new_value = truco_state.hand_value;
-            string raise_name;
+            int asker = current_player;
+            int responder = opponent;
+            bool truco_resolved = false;
 
-            if (!truco_state.truco_called) {
-              new_value = 2;
-              raise_name = "TRUCO";
-              truco_state.truco_called = true;
-            } else if (!truco_state.retruco_called) {
-              new_value = 3;
-              raise_name = "RETRUCO";
-              truco_state.retruco_called = true;
-            } else if (!truco_state.vale4_called) {
-              new_value = 4;
-              raise_name = "VALE 4";
-              truco_state.vale4_called = true;
-            } else {
-              send_message(room->players[current_player].socket_player, MSG_TEXT, 
-                          "Já está no máximo (Vale 4)! Jogue uma carta.\n");
-              turn--;
-              continue;
-            }
+            while (!truco_resolved) {
+              int new_value = truco_state.hand_value;
+              string raise_name;
 
-            string truco_msg = "🔥 Jogador " + to_string(current_player) + " pediu " + raise_name + 
-                             " (vale " + to_string(new_value) + " pontos)!\n";
-            for (int i = 0; i < TOTAL_PER_ROOM; i++) {
-              send_message(room->players[i].socket_player, MSG_TEXT, truco_msg);
-            }
-            
-            send_message(room->players[opponent].socket_player, MSG_YOUR_TURN, 
-                        "Aceitar? Digite:\n- 'S' para aceitar\n- 'N' para correr\n- 'T' para aumentar\n");
-            
-            Message truco_response;
-            recv(room->players[opponent].socket_player, &truco_response, sizeof(Message), 0);
-            string resp = truco_response.text;
-            
-            if (resp == "N" || resp == "n") {
-              room->players[current_player].points += truco_state.hand_value;
-              
-              string run_msg = "Jogador " + to_string(opponent) + " correu! Jogador " + 
-                             to_string(current_player) + " ganha " + 
-                             to_string(truco_state.hand_value) + " ponto(s)!\n";
+              if (!truco_state.truco_called) {
+                new_value = 2;
+                raise_name = "TRUCO";
+                truco_state.truco_called = true;
+              } else if (!truco_state.retruco_called) {
+                new_value = 3;
+                raise_name = "RETRUCO";
+                truco_state.retruco_called = true;
+              } else if (!truco_state.vale4_called) {
+                new_value = 4;
+                raise_name = "VALE 4";
+                truco_state.vale4_called = true;
+              } else {
+                send_message(room->players[asker].socket_player, MSG_TEXT, 
+                            "Já está no máximo (Vale 4)! Jogue uma carta.\n");
+                truco_resolved = true;
+                break;
+              }
+
+              string truco_msg = "🔥 Jogador " + to_string(asker) + " pediu " + raise_name + 
+                               " (vale " + to_string(new_value) + " pontos)!\n";
               for (int i = 0; i < TOTAL_PER_ROOM; i++) {
-                send_message(room->players[i].socket_player, MSG_TEXT, run_msg);
+                send_message(room->players[i].socket_player, MSG_TEXT, truco_msg);
               }
               
-              hand_finished = true;
-              break;
-            } else if (resp == "T" || resp == "t") {
-              send_message(room->players[opponent].socket_player, MSG_TEXT, 
-                          "Você aumentou! Voltando para o adversário...\n");
-              turn--;
-              current_player = opponent;
-              continue;
-            } else {
-              truco_state.hand_value = new_value;
-              truco_state.last_raiser = current_player;
+              send_message(room->players[responder].socket_player, MSG_YOUR_TURN, 
+                          "Aceitar? Digite:\n- 'S' para aceitar\n- 'N' para correr\n- 'T' para aumentar\n");
               
-              string accept_msg = "Jogador " + to_string(opponent) + " aceitou! Mão vale " + 
-                                to_string(new_value) + " ponto(s).\n";
-              for (int i = 0; i < TOTAL_PER_ROOM; i++) {
-                send_message(room->players[i].socket_player, MSG_TEXT, accept_msg);
+              Message truco_response;
+              recv(room->players[responder].socket_player, &truco_response, sizeof(Message), 0);
+              string resp = truco_response.text;
+              
+              if (resp == "N" || resp == "n") {
+                room->players[asker].points += truco_state.hand_value;
+                
+                string run_msg = "Jogador " + to_string(responder) + " correu! Jogador " + 
+                               to_string(asker) + " ganha " + 
+                               to_string(truco_state.hand_value) + " ponto(s)!\n";
+                for (int i = 0; i < TOTAL_PER_ROOM; i++) {
+                  send_message(room->players[i].socket_player, MSG_TEXT, run_msg);
+                }
+                
+                hand_finished = true;
+                truco_resolved = true;
+              } else if (resp == "T" || resp == "t") {
+                send_message(room->players[responder].socket_player, MSG_TEXT, 
+                            "Você aumentou! Voltando para o adversário...\n");
+                
+                int temp = asker;
+                asker = responder;
+                responder = temp;
+                // Loop continua
+              } else {
+                truco_state.hand_value = new_value;
+                truco_state.last_raiser = asker;
+                
+                string accept_msg = "Jogador " + to_string(responder) + " aceitou! Mão vale " + 
+                                  to_string(new_value) + " ponto(s).\n";
+                for (int i = 0; i < TOTAL_PER_ROOM; i++) {
+                  send_message(room->players[i].socket_player, MSG_TEXT, accept_msg);
+                }
+                
+                truco_resolved = true;
               }
             }
+            
+            if (hand_finished) break;
             
             turn--;
             continue;
