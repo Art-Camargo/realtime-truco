@@ -321,12 +321,88 @@ void *room_thread(void* arg) {
           send_hand(&room->players[current_player], played_cards, cards_played);
           
           send_message(room->players[current_player].socket_player, MSG_YOUR_TURN, 
-                      "Sua vez! Digite:\n- Número da carta (1-3)\n- 'T' para Truco\n- 'E' para Envido (só 1ª rodada)\n");
+                      "Sua vez! Digite:\n- Número da carta (1-3)\n- 'T' para Truco\n- 'E' para Envido (só 1ª rodada)\n- 'F' para Flor (se tiver)\n");
           
           Message response;
           recv(room->players[current_player].socket_player, &response, sizeof(Message), 0);
           
           string input = response.text;
+
+          // Processa Flor (só primeira rodada e se tiver flor)
+          if (first_round && (input == "F" || input == "f")) {
+            if (!room->players[current_player].has_flor) {
+              send_message(room->players[current_player].socket_player, MSG_TEXT, 
+                          "Você não tem Flor! Jogue uma carta.\n");
+              turn--;
+              continue;
+            }
+            
+            int opponent = (current_player == 0) ? 1 : 0;
+            
+            string flor_msg = "🌸 Jogador " + to_string(current_player) + " cantou FLOR!\n";
+            for (int i = 0; i < TOTAL_PER_ROOM; i++) {
+              send_message(room->players[i].socket_player, MSG_TEXT, flor_msg);
+            }
+            
+            // Verifica se o adversário também tem flor
+            if (room->players[opponent].has_flor) {
+              // Adversário tem flor - compara!
+              int flor_p0 = room->players[0].envido_points; // Flor usa mesma lógica do envido
+              int flor_p1 = room->players[1].envido_points;
+              
+              string compare_msg = "🌸 Adversário também tem FLOR! Comparando:\n";
+              compare_msg += "Jogador 0: " + to_string(flor_p0) + " pontos\n";
+              compare_msg += "Jogador 1: " + to_string(flor_p1) + " pontos\n";
+              
+              int flor_winner;
+              if (flor_p0 > flor_p1) {
+                flor_winner = 0;
+              } else if (flor_p1 > flor_p0) {
+                flor_winner = 1;
+              } else {
+                flor_winner = first_player;
+                compare_msg += "(Empate - mão ganha)\n";
+              }
+              
+              room->players[flor_winner].points += 6; // Contra-flor vale 6
+              compare_msg += "Jogador " + to_string(flor_winner) + " venceu a FLOR e ganhou 6 pontos!\n";
+              
+              for (int i = 0; i < TOTAL_PER_ROOM; i++) {
+                send_message(room->players[i].socket_player, MSG_TEXT, compare_msg);
+              }
+            } else {
+              // Adversário não tem flor - ganha 3 pontos direto
+              room->players[current_player].points += 3;
+              
+              string win_msg = "Adversário não tem Flor! Jogador " + to_string(current_player) + " ganha 3 pontos!\n";
+              for (int i = 0; i < TOTAL_PER_ROOM; i++) {
+                send_message(room->players[i].socket_player, MSG_TEXT, win_msg);
+              }
+            }
+            
+            send_scoreboard(room);
+            
+            // Verifica se alguém ganhou o jogo com a flor
+            for (int i = 0; i < TOTAL_PER_ROOM; i++) {
+              if (room->players[i].points >= WIN_SCORE) {
+                string winner_msg = "\n🏆 JOGADOR " + to_string(i) + " VENCEU O JOGO COM FLOR! 🏆\n";
+                for (int j = 0; j < TOTAL_PER_ROOM; j++) {
+                  send_message(room->players[j].socket_player, MSG_WINNER, winner_msg);
+                }
+                
+                for (int j = 0; j < TOTAL_PER_ROOM; j++) {
+                  close(room->players[j].socket_player);
+                }
+                
+                room->total_players = 0;
+                room->players.clear();
+                goto game_over;
+              }
+            }
+            
+            turn--;
+            continue;
+          }
 
           if (first_round && (input == "E" || input == "e")) {
             int opponent = (current_player == 0) ? 1 : 0;
